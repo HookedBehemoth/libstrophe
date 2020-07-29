@@ -80,9 +80,6 @@ sock_t sock_connect(const char *const host, const unsigned short port)
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;
-#ifdef AI_ADDRCONFIG
-    hints.ai_flags = AI_ADDRCONFIG;
-#endif /* AI_ADDRCONFIG */
     hints.ai_protocol = IPPROTO_TCP;
     hints.ai_socktype = SOCK_STREAM;
 
@@ -95,11 +92,13 @@ sock_t sock_connect(const char *const host, const unsigned short port)
         if (sock < 0)
             continue;
 
-        err = sock_set_nonblocking(sock);
-        if (err == 0) {
-            err = connect(sock, ainfo->ai_addr, ainfo->ai_addrlen);
-            if (err == 0 || _in_progress(sock_error()))
-                break;
+        sock_set_buffer_size(sock, 0x1000);
+        sock_set_keepalive(sock, 600, 60);
+        //fcntl(sock, F_SETFL, O_EXCL); //?
+
+        err = connect(sock, ainfo->ai_addr, ainfo->ai_addrlen);
+        if (err == 0 || _in_progress(sock_error())) {
+            break;
         }
         sock_close(sock);
     }
@@ -109,47 +108,42 @@ sock_t sock_connect(const char *const host, const unsigned short port)
     return sock;
 }
 
+int sock_set_buffer_size(const sock_t sock, int size)
+{
+    int err;
+
+    err = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    if (err == 0)
+        err = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+
+    return err;
+}
+
 int sock_set_keepalive(const sock_t sock, int timeout, int interval)
 {
     int ret;
     int optval = (timeout && interval) ? 1 : 0;
+    int retries = 3;
 
     /* This function doesn't change maximum number of keepalive probes */
-
-#ifdef _WIN32
-    struct tcp_keepalive ka;
-    DWORD dw = 0;
-
-    ka.onoff = optval;
-    ka.keepalivetime = timeout * 1000;
-    ka.keepaliveinterval = interval * 1000;
-    ret = WSAIoctl(sock, SIO_KEEPALIVE_VALS, &ka, sizeof(ka), NULL, 0, &dw,
-                   NULL, NULL);
-#else
     ret = setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
     if (ret < 0)
         return ret;
 
     if (optval) {
-#ifdef TCP_KEEPIDLE
         ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &timeout,
                          sizeof(timeout));
-#elif defined(TCP_KEEPALIVE)
-        /* QNX receives `struct timeval' as argument, but it seems OSX does int
-         */
-        ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPALIVE, &timeout,
-                         sizeof(timeout));
-#endif /* TCP_KEEPIDLE */
         if (ret < 0)
             return ret;
-#ifdef TCP_KEEPINTVL
         ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval,
                          sizeof(interval));
         if (ret < 0)
             return ret;
-#endif /* TCP_KEEPINTVL */
+        ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &retries,
+                         sizeof(retries));
+        if (ret < 0)
+            return ret;
     }
-#endif /* _WIN32 */
 
     return ret;
 }

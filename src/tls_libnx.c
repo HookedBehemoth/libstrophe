@@ -57,20 +57,36 @@ tls_t *tls_new(xmpp_conn_t *conn)
                 &p->c, SslInternalPki_DeviceClientCertDefault, &id);
             rc = sslContextCreateConnection(&p->c, &p->conn);
             if (R_SUCCEEDED(rc)) {
-                rc = sslConnectionSetVerifyOption(&p->conn, 0);
+                u32 verify_option =
+                    hosversionBefore(5, 0, 0)
+                        ? 0
+                        : SslVerifyOption_PeerCa | SslVerifyOption_HostName;
+                rc = sslConnectionSetVerifyOption(&p->conn, verify_option);
                 if (R_SUCCEEDED(rc)) {
-                    rc = sslConnectionSetSocketDescriptor(&p->conn, conn->sock,
-                                                          &p->fd);
+                    p->fd = socketSslConnectionSetSocketDescriptor(&p->conn,
+                                                                   conn->sock);
+                    if (p->fd < 0)
+                        rc = socketGetLastResult();
                     if (R_SUCCEEDED(rc)) {
                         rc = sslConnectionSetIoMode(&p->conn,
                                                     SslIoMode_NonBlocking);
                         if (R_SUCCEEDED(rc))
                             return p;
+                        else
+                            printf("sslConnectionSetIoMode: 0x%x\n", rc);
+                    } else {
+                        printf("sslConnectionSetSocketDescriptor: 0x%x\n", rc);
                     }
+                } else {
+                    printf("sslConnectionSetVerifyOption: 0x%x\n", rc);
                 }
                 sslConnectionClose(&p->conn);
+            } else {
+                printf("sslContextCreateConnection: 0x%x\n", rc);
             }
             sslContextClose(&p->c);
+        } else {
+            printf("sslCreateContext: 0x%x\n", rc);
         }
         xmpp_free(p->ctx, p);
         p = NULL;
@@ -90,14 +106,20 @@ int tls_set_credentials(tls_t *tls, const char *cafilename)
     Result rc = 0;
 
     rc = sslConnectionSetHostName(&tls->conn, cafilename, strlen(cafilename));
-    if (R_SUCCEEDED(rc)) {
+    if (R_FAILED(rc)) {
+        tls->error = R_DESCRIPTION(rc);
+        return 0;
+    }
+
+    if (hosversionBefore(5, 0, 0)) {
         rc = sslConnectionSetVerifyOption(&tls->conn, SslVerifyOption_HostName);
-        if (R_SUCCEEDED(rc)) {
-            return 1;
+        if (R_FAILED(rc)) {
+            tls->error = R_DESCRIPTION(rc);
+            return 0;
         }
     }
-    tls->error = R_DESCRIPTION(rc);
-    return 0;
+
+    return 1;
 }
 
 int tls_start(tls_t *tls)
@@ -110,11 +132,12 @@ int tls_start(tls_t *tls)
     }
 
     if (R_FAILED(rc)) {
+        printf("ssl start: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return 0;
-    } else {
-        return 1;
     }
+
+    return 1;
 }
 
 int tls_stop(tls_t *tls)
@@ -135,36 +158,42 @@ int tls_pending(tls_t *tls)
     Result rc = 0;
 
     rc = sslConnectionPending(&tls->conn, &pending);
-    if (R_SUCCEEDED(rc)) {
-        return pending;
-    } else {
+
+    if (R_FAILED(rc)) {
+        printf("ssl pending: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
+
+    return pending;
 }
 
 int tls_read(tls_t *tls, void *const buff, const size_t len)
 {
     u32 read_bytes = 0;
     Result rc = sslConnectionRead(&tls->conn, buff, len, &read_bytes);
-    if (R_SUCCEEDED(rc)) {
-        return read_bytes;
-    } else {
+
+    if (R_FAILED(rc)) {
+        printf("ssl read: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
+
+    return read_bytes;
 }
 
 int tls_write(tls_t *tls, const void *const buff, const size_t len)
 {
     u32 written_bytes = 0;
     Result rc = sslConnectionWrite(&tls->conn, buff, len, &written_bytes);
-    if (R_SUCCEEDED(rc)) {
-        return written_bytes;
-    } else {
+
+    if (R_FAILED(rc)) {
+        printf("ssl write: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
+
+    return written_bytes;
 }
 
 int tls_clear_pending_write(tls_t *tls)

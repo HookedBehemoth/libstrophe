@@ -265,6 +265,7 @@ int xmpp_conn_release(xmpp_conn_t *const conn)
         ctx = conn->ctx;
 
         if (conn->state == XMPP_STATE_CONNECTING ||
+            conn->state == XMPP_STATE_PROXY ||
             conn->state == XMPP_STATE_CONNECTED) {
             conn_disconnect(conn);
         }
@@ -804,7 +805,7 @@ void conn_parser_reset(xmpp_conn_t *const conn)
 void xmpp_disconnect(xmpp_conn_t *const conn)
 {
     if (conn->state != XMPP_STATE_CONNECTING &&
-        conn->state != XMPP_STATE_CONNECTED)
+        conn->state != XMPP_STATE_PROXY && conn->state != XMPP_STATE_CONNECTED)
         return;
 
     /* close the stream */
@@ -970,7 +971,8 @@ int conn_tls_start(xmpp_conn_t *const conn)
     }
 
     if (conn->tls != NULL) {
-        if (tls_set_credentials(conn->tls, conn->base_domain) && tls_start(conn->tls)) {
+        if (tls_set_credentials(conn->tls, conn->base_domain) &&
+            tls_start(conn->tls)) {
             conn->secured = 1;
         } else {
             rc = XMPP_EINT;
@@ -1094,7 +1096,8 @@ int xmpp_conn_is_secured(xmpp_conn_t *const conn)
  */
 int xmpp_conn_is_connecting(xmpp_conn_t *const conn)
 {
-    return conn->state == XMPP_STATE_CONNECTING;
+    return conn->state == XMPP_STATE_CONNECTING ||
+           conn->state == XMPP_STATE_PROXY;
 }
 
 /**
@@ -1400,7 +1403,7 @@ static int _conn_connect(xmpp_conn_t *const conn,
         return XMPP_EMEM;
 
     if (conn->proxy_host) {
-        sock_connect(conn->proxy_host, conn->proxy_port);
+        conn->sock = sock_connect(conn->proxy_host, conn->proxy_port);
         xmpp_debug(conn->ctx, "xmpp",
                    "sock_connect(proxy) to %s:%u returned %d", conn->proxy_host,
                    conn->proxy_port, conn->sock);
@@ -1420,9 +1423,15 @@ static int _conn_connect(xmpp_conn_t *const conn,
                                                  : auth_handle_component_open;
         conn_prepare_reset(conn, open_handler);
 
+        /* FIXME: it could happen that the connect returns immediately as
+         * successful, though this is pretty unlikely.  This would be a little
+         * hard to fix, since we'd have to detect and fire off the callback
+         * from within the event loop */
+
         conn->state = XMPP_STATE_PROXY;
         conn->timeout_stamp = time_stamp();
-        xmpp_debug(conn->ctx, "xmpp", "Attempting to proxy connect to %s", conn->proxy_host);
+        xmpp_debug(conn->ctx, "xmpp", "Attempting to proxy connect to %s",
+                   conn->proxy_host);
     } else {
         conn->sock = sock_connect(conn->base_domain, conn->port);
         xmpp_debug(conn->ctx, "xmpp", "sock_connect() to %s:%u returned %d",

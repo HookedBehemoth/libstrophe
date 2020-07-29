@@ -29,7 +29,7 @@
  *  process UI events from users, and xmpp_run_once() would be called
  *  from an idle function.
  */
-
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -182,6 +182,7 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
 
         switch (conn->state) {
         case XMPP_STATE_CONNECTING:
+        case XMPP_STATE_PROXY:
             /* connect has been called and we're waiting for it to complete */
             /* connection will give us write or error events */
 
@@ -320,8 +321,10 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
                 }
 
                 for (int i = 0; i < 0x1000; i++) {
-                    fd_set set = {};
-                    ret = select(conn->sock, &set, NULL, NULL, NULL);
+                    max = conn->sock;
+                    FD_ZERO(&rfds);
+                    FD_SET(conn->sock, &rfds);
+                    ret = select(max + 1, &rfds, NULL, NULL, NULL);
 
                     if (ret < 0) {
                         xmpp_debug(ctx, "xmpp", "send connect failed");
@@ -337,7 +340,7 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
 
                     if (i >= 4 && memcmp(buf + i - 4, "\r\n\r\n", 4) == 0) {
                         buf[i] = '\0';
-                        xmpp_debug(conn->ctx, "proxy response: \n%s", buf);
+                        xmpp_debug(ctx, "xmpp", "proxy response: \n%s", buf);
 
                         int mj, mi;
                         if (sscanf(buf, "HTTP/%d.%d %d", &mj, &mi, &ret) != 3)
@@ -350,6 +353,9 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
                             } else {
                                 xmpp_debug(ctx, "xmpp", "proxy error %d", ret);
                             }
+                        } else {
+                            xmpp_debug(ctx, "xmpp",
+                                       "proxy connection successful");
                         }
                         break;
                     }
