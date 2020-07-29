@@ -29,7 +29,7 @@
  *  process UI events from users, and xmpp_run_once() would be called
  *  from an idle function.
  */
-#include <netdb.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -321,10 +321,10 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
                 }
 
                 for (int i = 0; i < 0x1000; i++) {
-                    max = conn->sock;
+                    max = conn->sock + 1;
                     FD_ZERO(&rfds);
                     FD_SET(conn->sock, &rfds);
-                    ret = select(max + 1, &rfds, NULL, NULL, NULL);
+                    ret = select(max, &rfds, NULL, NULL, NULL);
 
                     if (ret < 0) {
                         xmpp_debug(ctx, "xmpp", "send connect failed");
