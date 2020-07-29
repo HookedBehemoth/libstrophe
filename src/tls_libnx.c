@@ -72,21 +72,11 @@ tls_t *tls_new(xmpp_conn_t *conn)
                                                     SslIoMode_NonBlocking);
                         if (R_SUCCEEDED(rc))
                             return p;
-                        else
-                            printf("sslConnectionSetIoMode: 0x%x\n", rc);
-                    } else {
-                        printf("sslConnectionSetSocketDescriptor: 0x%x\n", rc);
                     }
-                } else {
-                    printf("sslConnectionSetVerifyOption: 0x%x\n", rc);
                 }
                 sslConnectionClose(&p->conn);
-            } else {
-                printf("sslContextCreateConnection: 0x%x\n", rc);
             }
             sslContextClose(&p->c);
-        } else {
-            printf("sslCreateContext: 0x%x\n", rc);
         }
         xmpp_free(p->ctx, p);
         p = NULL;
@@ -132,7 +122,6 @@ int tls_start(tls_t *tls)
     }
 
     if (R_FAILED(rc)) {
-        printf("ssl start: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return 0;
     }
@@ -160,7 +149,6 @@ int tls_pending(tls_t *tls)
     rc = sslConnectionPending(&tls->conn, &pending);
 
     if (R_FAILED(rc)) {
-        printf("ssl pending: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
@@ -174,7 +162,6 @@ int tls_read(tls_t *tls, void *const buff, const size_t len)
     Result rc = sslConnectionRead(&tls->conn, buff, len, &read_bytes);
 
     if (R_FAILED(rc)) {
-        printf("ssl read: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
@@ -188,7 +175,6 @@ int tls_write(tls_t *tls, const void *const buff, const size_t len)
     Result rc = sslConnectionWrite(&tls->conn, buff, len, &written_bytes);
 
     if (R_FAILED(rc)) {
-        printf("ssl write: 0x%x\n", rc);
         tls->error = R_DESCRIPTION(rc);
         return -1;
     }
