@@ -246,18 +246,15 @@ int main(int argc, char **argv)
     xmpp_conn_t *conn;
     const char *jid;
     const char *pass;
-    char *prog;
     vcard_t vcard;
 
     if (argc < 4 || argc > 5) {
-        prog = argc > 0 ? strdup(argv[0]) : NULL;
         printf("Usage: %s <login-jid> <password> <recipient-jid> "
                "[image-file]\n\n",
-               prog == NULL ? "vcard" : basename(prog));
+               argv[0]);
         printf("If vCard contains a photo it will be stored to "
                "image-file. If you don't provide the image-file "
                "default filename will be generated.\n");
-        free(prog);
         return 1;
     }
 

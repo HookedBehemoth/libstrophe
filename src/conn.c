@@ -131,8 +131,13 @@ xmpp_conn_t *xmpp_conn_new(xmpp_ctx_t *const ctx)
             return NULL;
         }
         conn->domain = NULL;
+        conn->base_domain = NULL;
         conn->jid = NULL;
         conn->pass = NULL;
+        conn->proxy_host = NULL;
+        conn->proxy_port = 0;
+        conn->proxy_user = NULL;
+        conn->proxy_pass = NULL;
         conn->stream_id = NULL;
         conn->bound_jid = NULL;
 
@@ -332,8 +337,16 @@ int xmpp_conn_release(xmpp_conn_t *const conn)
 
         parser_free(conn->parser);
 
+        if (conn->base_domain)
+            xmpp_free(ctx, conn->base_domain);
         if (conn->jid)
             xmpp_free(ctx, conn->jid);
+        if (conn->proxy_host)
+            xmpp_free(ctx, conn->proxy_host);
+        if (conn->proxy_user)
+            xmpp_free(ctx, conn->proxy_user);
+        if (conn->proxy_pass)
+            xmpp_free(ctx, conn->proxy_pass);
         if (conn->pass)
             xmpp_free(ctx, conn->pass);
         if (conn->lang)
@@ -421,6 +434,48 @@ void xmpp_conn_set_pass(xmpp_conn_t *const conn, const char *const pass)
     if (conn->pass)
         xmpp_free(conn->ctx, conn->pass);
     conn->pass = xmpp_strdup(conn->ctx, pass);
+}
+
+/** Set a proxy used to connect.
+ *  If any host was previously set, it will be discarded.  The function
+ *  will make a copy of the host string.
+ *
+ *  @param conn a Strophe connection object
+ *  @param host the proxy host
+ *  @param port the proxy port
+ *
+ *  @ingroup Connections
+ */
+void xmpp_conn_set_proxy(xmpp_conn_t *const conn,
+                         const char *const host,
+                         const int port)
+{
+    if (conn->proxy_host)
+        xmpp_free(conn->ctx, conn->proxy_host);
+    conn->proxy_host = host ? xmpp_strdup(conn->ctx, host) : NULL;
+    conn->proxy_port = port;
+}
+
+/** Set the username and password used to authenticate the proxy connection.
+ *  If any username or password was previously set, it will be discarded.
+ *  The function will make a copy of the username and password string.
+ *
+ *  @param conn a Strophe connection object
+ *  @param user the username
+ *  @param pass the password
+ *
+ *  @ingroup Connections
+ */
+void xmpp_conn_set_proxy_auth(xmpp_conn_t *const conn,
+                              const char *const user,
+                              const char *const pass)
+{
+    if (conn->proxy_user)
+        xmpp_free(conn->ctx, conn->proxy_user);
+    if (conn->proxy_pass)
+        xmpp_free(conn->ctx, conn->proxy_pass);
+    conn->proxy_user = user ? xmpp_strdup(conn->ctx, user) : NULL;
+    conn->proxy_pass = pass ? xmpp_strdup(conn->ctx, pass) : NULL;
 }
 
 /** Get the strophe context that the connection is associated with.
@@ -915,7 +970,7 @@ int conn_tls_start(xmpp_conn_t *const conn)
     }
 
     if (conn->tls != NULL) {
-        if (tls_start(conn->tls)) {
+        if (tls_set_credentials(conn->tls, conn->base_domain) && tls_start(conn->tls)) {
             conn->secured = 1;
         } else {
             rc = XMPP_EINT;
@@ -1334,6 +1389,9 @@ static int _conn_connect(xmpp_conn_t *const conn,
     if (host == NULL || port == 0)
         return XMPP_EINT;
 
+    conn->base_domain = xmpp_strdup(conn->ctx, host);
+    conn->port = port;
+
     _conn_reset(conn);
 
     conn->type = type;
@@ -1341,32 +1399,58 @@ static int _conn_connect(xmpp_conn_t *const conn,
     if (!conn->domain)
         return XMPP_EMEM;
 
-    conn->sock = sock_connect(host, port);
-    xmpp_debug(conn->ctx, "xmpp", "sock_connect() to %s:%u returned %d", host,
-               port, conn->sock);
-    if (conn->sock == -1)
-        return XMPP_EINT;
-    if (conn->ka_timeout || conn->ka_interval)
-        sock_set_keepalive(conn->sock, conn->ka_timeout, conn->ka_interval);
+    if (conn->proxy_host) {
+        sock_connect(conn->proxy_host, conn->proxy_port);
+        xmpp_debug(conn->ctx, "xmpp",
+                   "sock_connect(proxy) to %s:%u returned %d", conn->proxy_host,
+                   conn->proxy_port, conn->sock);
 
-    /* setup handler */
-    conn->conn_handler = callback;
-    conn->userdata = userdata;
+        if (conn->sock == -1)
+            return XMPP_EINT;
+        if (conn->ka_timeout || conn->ka_interval)
+            sock_set_keepalive(conn->sock, conn->ka_timeout, conn->ka_interval);
 
-    open_handler = conn->is_raw
-                       ? auth_handle_open_stub
-                       : type == XMPP_CLIENT ? auth_handle_open
-                                             : auth_handle_component_open;
-    conn_prepare_reset(conn, open_handler);
+        /* setup handler */
+        conn->conn_handler = callback;
+        conn->userdata = userdata;
 
-    /* FIXME: it could happen that the connect returns immediately as
-     * successful, though this is pretty unlikely.  This would be a little
-     * hard to fix, since we'd have to detect and fire off the callback
-     * from within the event loop */
+        open_handler = conn->is_raw
+                           ? auth_handle_open_stub
+                           : type == XMPP_CLIENT ? auth_handle_open
+                                                 : auth_handle_component_open;
+        conn_prepare_reset(conn, open_handler);
 
-    conn->state = XMPP_STATE_CONNECTING;
-    conn->timeout_stamp = time_stamp();
-    xmpp_debug(conn->ctx, "xmpp", "Attempting to connect to %s", host);
+        conn->state = XMPP_STATE_PROXY;
+        conn->timeout_stamp = time_stamp();
+        xmpp_debug(conn->ctx, "xmpp", "Attempting to proxy connect to %s", conn->proxy_host);
+    } else {
+        conn->sock = sock_connect(conn->base_domain, conn->port);
+        xmpp_debug(conn->ctx, "xmpp", "sock_connect() to %s:%u returned %d",
+                   conn->base_domain, conn->port, conn->sock);
+        if (conn->sock == -1)
+            return XMPP_EINT;
+        if (conn->ka_timeout || conn->ka_interval)
+            sock_set_keepalive(conn->sock, conn->ka_timeout, conn->ka_interval);
+
+        /* setup handler */
+        conn->conn_handler = callback;
+        conn->userdata = userdata;
+
+        open_handler = conn->is_raw
+                           ? auth_handle_open_stub
+                           : type == XMPP_CLIENT ? auth_handle_open
+                                                 : auth_handle_component_open;
+        conn_prepare_reset(conn, open_handler);
+
+        /* FIXME: it could happen that the connect returns immediately as
+         * successful, though this is pretty unlikely.  This would be a little
+         * hard to fix, since we'd have to detect and fire off the callback
+         * from within the event loop */
+
+        conn->state = XMPP_STATE_CONNECTING;
+        conn->timeout_stamp = time_stamp();
+        xmpp_debug(conn->ctx, "xmpp", "Attempting to connect to %s", host);
+    }
 
     return 0;
 }

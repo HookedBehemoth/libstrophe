@@ -235,6 +235,12 @@ const char *xmpp_conn_get_bound_jid(const xmpp_conn_t *const conn);
 void xmpp_conn_set_jid(xmpp_conn_t *const conn, const char *const jid);
 const char *xmpp_conn_get_pass(const xmpp_conn_t *const conn);
 void xmpp_conn_set_pass(xmpp_conn_t *const conn, const char *const pass);
+void xmpp_conn_set_proxy(xmpp_conn_t *const conn,
+                         const char *const host,
+                         const int port);
+void xmpp_conn_set_proxy_auth(xmpp_conn_t *const conn,
+                              const char *const user,
+                              const char *const pass);
 xmpp_ctx_t *xmpp_conn_get_context(xmpp_conn_t *const conn);
 void xmpp_conn_disable_tls(xmpp_conn_t *const conn);
 int xmpp_conn_is_secured(xmpp_conn_t *const conn);

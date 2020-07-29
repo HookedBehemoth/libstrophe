@@ -7,17 +7,6 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 PKG_PROG_PKG_CONFIG
 
-AC_CANONICAL_HOST
-AS_CASE([$host_os],
-    [freebsd*],    [PLATFORM="bsd"],
-    [openbsd*],    [PLATFORM="bsd"],
-    [netbsd*],     [PLATFORM="bsd"],
-    [*nto*|*qnx*], [PLATFORM="qnx"],
-    [*solaris*],   [PLATFORM="solaris"],
-    [*android*],   [PLATFORM="android"],
-    [*haiku*],     [PLATFORM="haiku"],
-                   [PLATFORM="nix"])
-
 WARNING_FLAGS="-Wall"
 
 AS_CASE([$PLATFORM],
@@ -33,18 +22,6 @@ AC_ARG_ENABLE([cares],
 
 AC_SEARCH_LIBS([socket], [network socket])
 AC_CHECK_FUNCS([snprintf vsnprintf])
-
-if test "x$enable_tls" != xno; then
-    PKG_CHECK_MODULES([openssl], [openssl],
-        [PC_REQUIRES="openssl ${PC_REQUIRES}"],
-        [AC_CHECK_HEADER([openssl/ssl.h],
-            [
-                openssl_LIBS="-lssl -lcrypto"
-                PC_LIBS="${openssl_LIBS} ${PC_LIBS}"
-            ],
-            [AC_MSG_ERROR([openssl not found; openssl required])]
-        )])
-fi
 
 with_parser=""
 if test "x$with_libxml2" != xyes; then
@@ -94,47 +71,6 @@ fi
 
 AC_MSG_NOTICE([libstrophe will use the $with_parser XML parser])
 
-if test "x$enable_cares" = xyes; then
-    PKG_CHECK_MODULES([libcares], [libcares >= 1.7.0],
-        [
-            PC_REQUIRES="libcares ${PC_REQUIRES}"
-            RESOLV_CFLAGS=$libcares_CFLAGS
-            RESOLV_LIBS=$libcares_LIBS
-            AC_DEFINE([HAVE_CARES])
-        ],
-        [AC_MSG_ERROR([libcares not found])])
-        # TODO: if pkg-config doesn't find, check the library manually
-else
-
-AS_CASE([$PLATFORM],
-    [bsd],     [RESOLV_LIBS=""],
-    [qnx],     [RESOLV_LIBS="-lsocket"],
-    [solaris], [RESOLV_LIBS="-lresolv -lsocket -lnsl"],
-    [android], [RESOLV_LIBS=""],
-    [haiku],   [RESOLV_LIBS="-lnetwork"],
-               [RESOLV_LIBS="-lresolv"])
-
-LIBS_TMP="${LIBS}"
-LIBS="${RESOLV_LIBS}"
-AC_LINK_IFELSE([AC_LANG_SOURCE([
-        #include <sys/types.h>
-        #include <netinet/in.h>
-        #include <arpa/nameser.h>
-        #include <resolv.h>
-        #include <netdb.h>
-
-        int main() {
-            (void)res_query(NULL, 0, 0, NULL, 0);
-            return 0;
-        }
-    ])],
-    [],
-    [AC_MSG_ERROR([res_query() not found with LIBS="${LIBS}"])])
-LIBS="${LIBS_TMP}"
-PC_LIBS="${RESOLV_LIBS} ${PC_LIBS}"
-
-fi
-
 m4_ifdef([PKG_INSTALLDIR], [PKG_INSTALLDIR],
     [AC_ARG_WITH([pkgconfigdir],
         [AS_HELP_STRING([--with-pkgconfigdir],
@@ -151,8 +87,6 @@ AC_SUBST([PC_LIBS], [${PC_LIBS}])
 
 AC_SUBST(PARSER_CFLAGS)
 AC_SUBST(PARSER_LIBS)
-AC_SUBST(RESOLV_CFLAGS)
-AC_SUBST(RESOLV_LIBS)
 AC_SUBST(WARNING_FLAGS)
 AC_CONFIG_FILES([Makefile libstrophe.pc])
 AC_OUTPUT

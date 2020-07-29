@@ -5,12 +5,6 @@ ACLOCAL_AMFLAGS = -I m4
 PARSER_CFLAGS=@PARSER_CFLAGS@
 PARSER_LIBS=@PARSER_LIBS@
 
-SSL_CFLAGS = @openssl_CFLAGS@
-SSL_LIBS = @openssl_LIBS@
-
-RESOLV_CFLAGS = @RESOLV_CFLAGS@
-RESOLV_LIBS = @RESOLV_LIBS@
-
 WARNING_FLAGS = @WARNING_FLAGS@
 STROPHE_FLAGS = -I$(top_srcdir) $(WARNING_FLAGS)
 STROPHE_LIBS = libstrophe.la
@@ -18,8 +12,8 @@ STROPHE_LIBS = libstrophe.la
 ## Main build targets
 lib_LTLIBRARIES = libstrophe.la
 
-libstrophe_la_CFLAGS = $(SSL_CFLAGS) $(STROPHE_FLAGS) $(PARSER_CFLAGS) $(RESOLV_CFLAGS)
-libstrophe_la_LDFLAGS = $(SSL_LIBS) $(PARSER_LIBS) $(RESOLV_LIBS) -no-undefined
+libstrophe_la_CFLAGS = $(STROPHE_FLAGS) $(PARSER_CFLAGS)
+libstrophe_la_LDFLAGS = $(PARSER_LIBS) -no-undefined
 # Export only public API
 libstrophe_la_LDFLAGS += -export-symbols-regex '^xmpp_'
 
@@ -67,7 +61,7 @@ libstrophe_la_SOURCES += \
 if DISABLE_TLS
 libstrophe_la_SOURCES += src/tls_dummy.c
 else
-libstrophe_la_SOURCES += src/tls_openssl.c
+libstrophe_la_SOURCES += src/tls_libnx.c
 endif
 
 if PARSER_EXPAT
@@ -94,8 +88,6 @@ EXTRA_DIST = \
 	jni/Application.mk \
 	rpm/README \
 	rpm/libstrophe.spec \
-	src/tls_gnutls.c \
-	src/tls_schannel.c \
 	tests/res_query_dump.c
 
 ## Examples
