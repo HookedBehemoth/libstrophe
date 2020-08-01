@@ -91,6 +91,7 @@ void xmpp_debug(const xmpp_ctx_t * const ctx,
 typedef enum {
     XMPP_STATE_DISCONNECTED,
     XMPP_STATE_CONNECTING,
+    XMPP_STATE_PROXY,
     XMPP_STATE_CONNECTED
 } xmpp_conn_state_t;
 
@@ -181,8 +182,14 @@ struct _xmpp_conn_t {
 
     char *lang;
     char *domain;
+    char *base_domain;
+    int port;
     char *jid;
     char *pass;
+    char *proxy_host;
+    int proxy_port;
+    char *proxy_user;
+    char *proxy_pass;
     char *bound_jid;
     char *stream_id;
 

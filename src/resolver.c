@@ -13,7 +13,7 @@
  *  DNS resolver.
  */
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__SWITCH__)
 #include <netinet/in.h>
 #include <arpa/nameser.h>
 #include <resolv.h>             /* res_query */
@@ -229,6 +229,9 @@ static void resolver_srv_list_sort(resolver_srv_rr_t **srv_rr_list)
 int resolver_srv_lookup_buf(xmpp_ctx_t *ctx, const unsigned char *buf,
                             size_t len, resolver_srv_rr_t **srv_rr_list)
 {
+#ifdef __SWITCH__
+    return 0;
+#else
     unsigned i;
     unsigned j;
     unsigned name_len;
@@ -295,11 +298,15 @@ int resolver_srv_lookup_buf(xmpp_ctx_t *ctx, const unsigned char *buf,
     resolver_srv_list_sort(srv_rr_list);
 
     return *srv_rr_list != NULL ? XMPP_DOMAIN_FOUND : XMPP_DOMAIN_NOT_FOUND;
+#endif
 }
 
 int resolver_srv_lookup(xmpp_ctx_t *ctx, const char *service, const char *proto,
                         const char *domain, resolver_srv_rr_t **srv_rr_list)
 {
+#ifdef __SWITCH__
+    return 0;
+#else
     char fulldomain[2048];
     unsigned char buf[65535];
     int len;
@@ -323,6 +330,7 @@ int resolver_srv_lookup(xmpp_ctx_t *ctx, const char *service, const char *proto,
         set = resolver_srv_lookup_buf(ctx, buf, (size_t)len, srv_rr_list);
 
     return set;
+#endif
 }
 
 void resolver_srv_free(xmpp_ctx_t *ctx, resolver_srv_rr_t *srv_rr_list)

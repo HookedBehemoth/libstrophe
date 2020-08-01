@@ -172,6 +172,7 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
 
         switch (conn->state) {
         case XMPP_STATE_CONNECTING:
+        case XMPP_STATE_PROXY:
             /* connect has been called and we're waiting for it to complete */
             /* connection will give us write or error events */
 
@@ -241,6 +242,108 @@ void xmpp_run_once(xmpp_ctx_t *ctx, const unsigned long timeout)
                 if (ret != 0) {
                     /* connection failed */
                     xmpp_debug(ctx, "xmpp", "connection failed, error %d", ret);
+                    conn_disconnect(conn);
+                    break;
+                }
+
+                conn->state = XMPP_STATE_CONNECTED;
+                xmpp_debug(ctx, "xmpp", "connection successful");
+                conn_established(conn);
+            }
+
+            break;
+        case XMPP_STATE_PROXY:
+            if (FD_ISSET(conn->sock, &wfds)) {
+                /* connection complete */
+
+                /* check for error */
+                ret = sock_connect_error(conn->sock);
+                if (ret != 0) {
+                    /* connection failed */
+                    xmpp_debug(ctx, "xmpp", "connection failed, error %d", ret);
+                    conn_disconnect(conn);
+                    break;
+                }
+
+                int prog;
+
+                /* Request forwarding */
+                prog = snprintf(buf, 4096, "CONNECT %s:%d HTTP/1.0\r\n", conn->base_domain, conn->port);
+
+                if (conn->proxy_user) {
+                    /* Authenticate proxy user */
+                    char auth_buf[0x48];
+                    int auth_len = 0;
+
+                    auth_len =
+                        snprintf(auth_buf, 0x48, "%s:%s", conn->proxy_user, conn->proxy_pass ? conn->proxy_pass : "");
+
+                    char *enc = xmpp_base64_encode(
+                        ctx, (unsigned char *)auth_buf, auth_len);
+
+                    if (!enc) {
+                        xmpp_debug(ctx, "xmpp", "make request failed");
+                        conn_disconnect(conn);
+                        break;
+                    }
+
+                    prog +=
+                        snprintf(buf + prog, 4096 - prog, "Proxy-Authorization: Basic %s\r\n", enc);
+
+                    xmpp_free(ctx, enc);
+                }
+
+                prog += snprintf(buf + prog, 4096 - prog, "\r\n");
+
+                ret = sock_write(conn->sock, buf, prog);
+
+                if (ret < 0) {
+                    /* send failed */
+                    xmpp_debug(ctx, "xmpp", "send connect failed");
+                    conn_disconnect(conn);
+                    break;
+                }
+
+                for (int i = 0; i < 0x1000; i++) {
+                    max = conn->sock + 1;
+                    FD_ZERO(&rfds);
+                    FD_SET(conn->sock, &rfds);
+                    ret = select(max, &rfds, NULL, NULL, NULL);
+
+                    if (ret < 0) {
+                        xmpp_debug(ctx, "xmpp", "send connect failed");
+                        break;
+                    }
+
+                    ret = sock_read(conn->sock, buf + i, 1);
+
+                    if (ret < 0) {
+                        xmpp_debug(ctx, "xmpp", "send connect failed");
+                        break;
+                    }
+
+                    if (i >= 4 && memcmp(buf + i - 4, "\r\n\r\n", 4) == 0) {
+                        buf[i] = '\0';
+                        xmpp_debug(ctx, "xmpp", "proxy response: \n%s", buf);
+
+                        int mj, mi;
+                        if (sscanf(buf, "HTTP/%d.%d %d", &mj, &mi, &ret) != 3)
+                            ret = -1;
+
+                        if (ret != 200) {
+                            if (ret == -1) {
+                                xmpp_debug(ctx, "xmpp", "failed to parse proxy response");
+                            } else {
+                                xmpp_debug(ctx, "xmpp", "proxy error %d", ret);
+                            }
+                        } else {
+                            xmpp_debug(ctx, "xmpp", "proxy connection successful");
+                        }
+                        break;
+                    }
+                }
+
+                if (ret < 0) {
                     conn_disconnect(conn);
                     break;
                 }

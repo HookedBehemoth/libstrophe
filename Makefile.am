@@ -5,9 +5,6 @@ ACLOCAL_AMFLAGS = -I m4
 PARSER_CFLAGS=@PARSER_CFLAGS@
 PARSER_LIBS=@PARSER_LIBS@
 
-SSL_CFLAGS = @openssl_CFLAGS@
-SSL_LIBS = @openssl_LIBS@
-
 RESOLV_LIBS = @RESOLV_LIBS@
 
 STROPHE_FLAGS = -I$(top_srcdir) -Wall -Wextra -Wno-unused-parameter
@@ -60,7 +57,7 @@ libstrophe_la_SOURCES += \
 if DISABLE_TLS
 libstrophe_la_SOURCES += src/tls_dummy.c
 else
-libstrophe_la_SOURCES += src/tls_openssl.c
+libstrophe_la_SOURCES += src/tls_libnx.c
 endif
 
 if PARSER_EXPAT

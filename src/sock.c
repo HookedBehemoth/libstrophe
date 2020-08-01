@@ -75,12 +75,13 @@ sock_t sock_connect(const char * const host, const unsigned short port)
     char service[6];
     struct addrinfo *res, *ainfo, hints;
     int err;
+    int buffer_size = 0x1000;
 
     xmpp_snprintf(service, 6, "%u", port);
 
     memset(&hints, 0, sizeof(struct addrinfo));
     hints.ai_family = AF_UNSPEC;
-#ifdef AI_ADDRCONFIG
+#if defined(AI_ADDRCONFIG) && defined(__SWITCH__)
     hints.ai_flags = AI_ADDRCONFIG;
 #endif /* AI_ADDRCONFIG */
     hints.ai_protocol = IPPROTO_TCP;
@@ -95,12 +96,23 @@ sock_t sock_connect(const char * const host, const unsigned short port)
         if (sock < 0)
             continue;
 
+#ifdef __SWITCH__
+        setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &buffer_size, sizeof(buffer_size));
+        sock_set_keepalive(sock, 600, 60);
+
+        err = connect(sock, ainfo->ai_addr, ainfo->ai_addrlen);
+        if (err == 0 || _in_progress(sock_error()))
+            break;
+#else
+
         err = sock_set_nonblocking(sock);
         if (err == 0) {
             err = connect(sock, ainfo->ai_addr, ainfo->ai_addrlen);
             if (err == 0 || _in_progress(sock_error()))
                 break;
         }
+#endif
         sock_close(sock);
     }
     freeaddrinfo(res);
@@ -113,6 +125,9 @@ int sock_set_keepalive(const sock_t sock, int timeout, int interval)
 {
     int ret;
     int optval = (timeout && interval) ? 1 : 0;
+#ifdef __SWITCH__
+    int retries = 3;
+#endif
 
     /* This function doesn't change maximum number of keepalive probes */
 
@@ -124,6 +139,20 @@ int sock_set_keepalive(const sock_t sock, int timeout, int interval)
     ka.keepalivetime = timeout * 1000;
     ka.keepaliveinterval = interval * 1000;
     ret = WSAIoctl(sock, SIO_KEEPALIVE_VALS, &ka, sizeof(ka), NULL, 0, &dw, NULL, NULL);
+#elif __SWITCH__
+    ret = setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
+    if (ret < 0)
+        return ret;
+
+    if (optval) {
+        ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &timeout, sizeof(timeout));
+        if (ret < 0)
+            return ret;
+        ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
+        if (ret < 0)
+            return ret;
+        ret = setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &retries, sizeof(retries));
+    }
 #else
     ret = setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval));
     if (ret < 0)
